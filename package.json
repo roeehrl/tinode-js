@@ -1,7 +1,7 @@
 {
   "name": "@roeehrl/tinode-sdk",
   "description": "Tinode SDK fork with Storage interface for SQLite persistence in React Native",
-  "version": "0.25.1-sqlite.1",
+  "version": "0.25.1-sqlite.2",
   "types": "./types/index.d.ts",
   "scripts": {
     "format": "js-beautify -r src/*.js",
@@ -24,7 +24,8 @@
     "umd/tinode.prod.js",
     "umd/tinode.prod.js.map",
     "types/index.d.ts",
-    "src/"
+    "src/",
+    "version.js"
   ],
   "keywords": [
     "instant messenger",
