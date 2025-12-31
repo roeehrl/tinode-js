@@ -2105,13 +2105,16 @@ export default class Topic {
 
   // Load most recent messages from persistent cache.
   _loadMessages(db, query) {
+    console.log('[Topic] _loadMessages CALLED:', this.name, 'query:', JSON.stringify(query), 'db:', !!db);
     query = query || {};
     query.limit = query.limit || Const.DEFAULT_MESSAGES_PAGE;
 
     // Count of message loaded from DB.
     let count = 0;
+    console.log('[Topic] _loadMessages: calling db.readMessages');
     return db.readMessages(this.name, query)
       .then(msgs => {
+        console.log('[Topic] _loadMessages: db.readMessages returned', msgs ? msgs.length : 0, 'messages');
         msgs.forEach(data => {
           if (data.seq > this._maxSeq) {
             this._maxSeq = data.seq;
@@ -2123,6 +2126,7 @@ export default class Topic {
           this._maybeUpdateMessageVersionsCache(data);
         });
         count = msgs.length;
+        console.log('[Topic] _loadMessages: processed', count, 'messages, _maxSeq:', this._maxSeq, '_minSeq:', this._minSeq);
       })
       .then(_ => db.readDelLog(this.name, query))
       .then(dellog => {

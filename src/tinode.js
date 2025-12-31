@@ -68,9 +68,10 @@ import {
   simplify
 } from './utils.js';
 
-// Re-export AccessMode
+// Re-export AccessMode and DB
 export {
-  AccessMode
+  AccessMode,
+  DBCache as DB
 };
 
 let WebSocketProvider;
@@ -1047,6 +1048,18 @@ export class Tinode {
 
     DBCache.setDatabaseProvider(IndexedDBProvider);
   }
+
+  /**
+   * Set a custom storage provider (e.g., SQLiteStorage for React Native).
+   * Must be called BEFORE creating Tinode instance with persist: true.
+   * @static
+   *
+   * @param {Object} storage - Storage implementation with the same interface as DB class.
+   */
+  static setStorageProvider(storage) {
+    DBCache.setStorageProvider(storage);
+  }
+
   /**
    * Return information about the current name and version of this Tinode library.
    * @static

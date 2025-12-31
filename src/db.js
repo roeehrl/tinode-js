@@ -14,6 +14,9 @@ const DB_NAME = 'tinode-web';
 
 let IDBProvider;
 
+// Custom storage provider (e.g., SQLiteStorage for React Native)
+let _storageProvider = null;
+
 export default class DB {
   #onError = _ => {};
   #logger = _ => {};
@@ -22,10 +25,23 @@ export default class DB {
   db = null;
   // Indicator that the cache is disabled.
   disabled = true;
+  // Reference to custom storage provider (if using delegation)
+  #delegateStorage = null;
 
   constructor(onError, logger) {
     this.#onError = onError || this.#onError;
     this.#logger = logger || this.#logger;
+
+    // If a custom storage provider is set, use it instead of IndexedDB
+    if (_storageProvider) {
+      this.#delegateStorage = _storageProvider;
+      this.disabled = false;
+    }
+  }
+
+  // Helper to check if we should delegate to custom storage
+  #shouldDelegate() {
+    return this.#delegateStorage !== null;
   }
 
   #mapObjects(source, callback, context) {
@@ -57,6 +73,17 @@ export default class DB {
    * @returns {Promise} promise to be resolved/rejected when the DB is initialized.
    */
   initDatabase() {
+    console.log('[DB] initDatabase CALLED, shouldDelegate:', this.#shouldDelegate(), 'delegateStorage:', !!this.#delegateStorage);
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      console.log('[DB] initDatabase DELEGATING to SQLiteStorage');
+      return this.#delegateStorage.initDatabase().then(result => {
+        console.log('[DB] initDatabase: SQLiteStorage initialized successfully');
+        return result;
+      });
+    }
+    console.log('[DB] initDatabase using IndexedDB');
+
     return new Promise((resolve, reject) => {
       // Open the database and initialize callbacks.
       const req = IDBProvider.open(DB_NAME, DB_VERSION);
@@ -139,6 +166,11 @@ export default class DB {
    * Delete persistent cache.
    */
   deleteDatabase() {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.deleteDatabase();
+    }
+
     // Close connection, otherwise operations will fail with 'onblocked'.
     if (this.db) {
       this.db.close();
@@ -172,6 +204,10 @@ export default class DB {
    * @returns {boolean} <code>true</code> if cache is ready, <code>false</code> otherwise.
    */
   isReady() {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.isReady();
+    }
     return !!this.db;
   }
 
@@ -184,6 +220,11 @@ export default class DB {
    * @returns {Promise} promise resolved/rejected on operation completion.
    */
   updTopic(topic) {
+    console.log('[DB] updTopic CALLED:', topic?.name, 'shouldDelegate:', this.#shouldDelegate());
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updTopic(topic);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -214,6 +255,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   markTopicAsDeleted(name, deleted) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.markTopicAsDeleted(name, deleted);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -247,6 +292,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   remTopic(name) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.remTopic(name);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -276,6 +325,16 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   mapTopics(callback, context) {
+    console.log('[DB] mapTopics CALLED, shouldDelegate:', this.#shouldDelegate());
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      console.log('[DB] mapTopics DELEGATING to SQLiteStorage');
+      return this.#delegateStorage.mapTopics(callback, context).then(result => {
+        console.log('[DB] mapTopics: SQLiteStorage returned', result ? result.length : 0, 'topics');
+        return result;
+      });
+    }
+    console.log('[DB] mapTopics using IndexedDB');
     return this.#mapObjects('topic', callback, context);
   }
 
@@ -286,6 +345,10 @@ export default class DB {
    * @param {Object} src - serialized data to copy from.
    */
   deserializeTopic(topic, src) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.deserializeTopic(topic, src);
+    }
     DB.#deserializeTopic(topic, src);
   }
 
@@ -298,6 +361,10 @@ export default class DB {
    * @returns {Promise} promise resolved/rejected on operation completion.
    */
   updUser(uid, pub) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updUser(uid, pub);
+    }
     if (arguments.length < 2 || pub === undefined) {
       // No point inupdating user with invalid data.
       return;
@@ -331,6 +398,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   remUser(uid) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.remUser(uid);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -358,6 +429,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   mapUsers(callback, context) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.mapUsers(callback, context);
+    }
     return this.#mapObjects('user', callback, context);
   }
 
@@ -368,6 +443,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   getUser(uid) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.getUser(uid);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -400,6 +479,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   updSubscription(topicName, uid, sub) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updSubscription(topicName, uid, sub);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -430,6 +513,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   mapSubscriptions(topicName, callback, context) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.mapSubscriptions(topicName, callback, context);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve([]) :
@@ -461,6 +548,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   addMessage(msg) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.addMessage(msg);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -489,6 +580,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   updMessageStatus(topicName, seq, status) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updMessageStatus(topicName, seq, status);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -529,6 +624,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   remMessages(topicName, from, to) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.remMessages(topicName, from, to);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -564,6 +663,14 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   readMessages(topicName, query, callback, context) {
+    console.log('[DB] readMessages CALLED:', topicName, 'shouldDelegate:', this.#shouldDelegate(), 'delegateStorage:', !!this.#delegateStorage);
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      console.log('[DB] readMessages DELEGATING to SQLiteStorage');
+      return this.#delegateStorage.readMessages(topicName, query, callback, context);
+    }
+    console.log('[DB] readMessages NOT delegating, using IndexedDB');
+
     query = query || {};
 
     if (!this.isReady()) {
@@ -652,6 +759,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   addDelLog(topicName, delId, ranges) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.addDelLog(topicName, delId, ranges);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve() :
@@ -684,6 +795,11 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   readDelLog(topicName, query) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.readDelLog(topicName, query);
+    }
+
     query = query || {};
 
     if (!this.isReady()) {
@@ -773,6 +889,10 @@ export default class DB {
    * @return {Promise} promise resolved/rejected on operation completion.
    */
   maxDelId(topicName) {
+    // Delegate to custom storage if set
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.maxDelId(topicName);
+    }
     if (!this.isReady()) {
       return this.disabled ?
         Promise.resolve(0) :
@@ -876,5 +996,26 @@ export default class DB {
    */
   static setDatabaseProvider(idbProvider) {
     IDBProvider = idbProvider;
+  }
+
+  /**
+   * Set a custom storage provider (e.g., SQLiteStorage for React Native).
+   * Must be called BEFORE creating Tinode instance with persist: true.
+   * @static
+   * @memberof DB
+   * @param {Object} storage - Storage implementation with the same interface as DB class.
+   */
+  static setStorageProvider(storage) {
+    _storageProvider = storage;
+  }
+
+  /**
+   * Get the current storage provider (if any).
+   * @static
+   * @memberof DB
+   * @returns {Object|null} The custom storage provider, or null if using default IndexedDB.
+   */
+  static getStorageProvider() {
+    return _storageProvider;
   }
 }

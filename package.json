@@ -1,7 +1,8 @@
 {
-  "name": "tinode-sdk",
-  "description": "Tinode SDK",
-  "version": "0.25.1",
+  "name": "@roeehrl/tinode-sdk",
+  "description": "Tinode SDK fork with Storage interface for SQLite persistence in React Native",
+  "version": "0.25.1-sqlite.1",
+  "types": "./types/index.d.ts",
   "scripts": {
     "format": "js-beautify -r src/*.js",
     "build": "npm run format && npm run vers && npm run build:prod && npm run build:dev",
@@ -15,28 +16,49 @@
   "browserslist": ["defaults"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tinode/tinode-js.git"
+    "url": "git+https://github.com/roeehrl/tinode-js.git"
   },
   "files": [
     "umd/tinode.dev.js",
     "umd/tinode.dev.js.map",
     "umd/tinode.prod.js",
     "umd/tinode.prod.js.map",
-    "version.json"
+    "types/index.d.ts",
+    "src/"
   ],
   "keywords": [
     "instant messenger",
     "messenger",
-    "chat"
+    "chat",
+    "sqlite",
+    "react-native"
   ],
-  "email": "info@tinode.co",
   "author": "Tinode Authors <info@tinode.co>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/tinode/tinode-js/issues"
+    "url": "https://github.com/roeehrl/tinode-js/issues"
   },
-  "homepage": "https://github.com/tinode/chat",
-  "main": "./umd/tinode.prod.js",
+  "homepage": "https://github.com/roeehrl/tinode-js",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "react-native": "./src/index.native.js",
+  "exports": {
+    ".": {
+      "react-native": "./src/index.native.js",
+      "browser": "./umd/tinode.prod.js",
+      "import": "./src/index.js",
+      "require": "./umd/tinode.prod.js",
+      "default": "./src/index.js"
+    }
+  },
+  "peerDependencies": {
+    "expo-sqlite": ">=14.0.0"
+  },
+  "peerDependenciesMeta": {
+    "expo-sqlite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@babel/core": "^7.22.8",
     "@babel/plugin-proposal-numeric-separator": "^7.18.6",
