@@ -354,7 +354,11 @@ export default class Connection {
 
     this.reconnect = force => {
       this.#boffStop();
-      this.connect(null, force);
+      // Catch the promise to prevent unhandled rejection
+      // Errors are handled via onDisconnect callback instead
+      this.connect(null, force).catch(_ => {
+        Connection.#log('LP reconnect promise rejected, error handled via onDisconnect callback');
+      });
     };
 
     this.disconnect = _ => {
@@ -463,7 +467,11 @@ export default class Connection {
 
     this.reconnect = force => {
       this.#boffStop();
-      this.connect(null, force);
+      // Catch the promise to prevent unhandled rejection
+      // Errors are handled via onDisconnect callback instead
+      this.connect(null, force).catch(_ => {
+        Connection.#log('WS reconnect promise rejected, error handled via onDisconnect callback');
+      });
     };
 
     this.disconnect = _ => {

@@ -1,7 +1,7 @@
 {
   "name": "@roeehrl/tinode-sdk",
   "description": "Tinode SDK fork with Storage interface for SQLite persistence in React Native",
-  "version": "0.25.1-sqlite.2",
+  "version": "0.25.1-sqlite.5",
   "types": "./types/index.d.ts",
   "scripts": {
     "format": "js-beautify -r src/*.js",
@@ -45,6 +45,7 @@
   "react-native": "./src/index.native.js",
   "exports": {
     ".": {
+      "types": "./types/index.d.ts",
       "react-native": "./src/index.native.js",
       "browser": "./umd/tinode.prod.js",
       "import": "./src/index.js",
