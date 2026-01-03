@@ -1,7 +1,7 @@
 {
   "name": "@roeehrl/tinode-sdk",
   "description": "Tinode SDK fork with Storage interface for SQLite persistence in React Native",
-  "version": "0.25.1-sqlite.6",
+  "version": "0.25.1-sqlite.7",
   "types": "./types/index.d.ts",
   "scripts": {
     "format": "js-beautify -r src/*.js",
@@ -13,7 +13,9 @@
     "vers": "echo \"export const PACKAGE_VERSION = \\\"`node -p -e \"require('./package.json').version\"`\\\";\" > version.js",
     "test": "jest"
   },
-  "browserslist": ["defaults"],
+  "browserslist": [
+    "defaults"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/roeehrl/tinode-js.git"
