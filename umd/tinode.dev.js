@@ -669,7 +669,9 @@ class Connection {
     };
     this.reconnect = force => {
       this.#boffStop();
-      this.connect(null, force);
+      this.connect(null, force).catch(_ => {
+        Connection.#log('LP reconnect promise rejected, error handled via onDisconnect callback');
+      });
     };
     this.disconnect = _ => {
       this.#boffClosed = true;
@@ -751,7 +753,9 @@ class Connection {
     };
     this.reconnect = force => {
       this.#boffStop();
-      this.connect(null, force);
+      this.connect(null, force).catch(_ => {
+        Connection.#log('WS reconnect promise rejected, error handled via onDisconnect callback');
+      });
     };
     this.disconnect = _ => {
       this.#boffClosed = true;
@@ -799,14 +803,23 @@ __webpack_require__.r(__webpack_exports__);
 const DB_VERSION = 3;
 const DB_NAME = 'tinode-web';
 let IDBProvider;
+let _storageProvider = null;
 class DB {
   #onError = _ => {};
   #logger = _ => {};
   db = null;
   disabled = true;
+  #delegateStorage = null;
   constructor(onError, logger) {
     this.#onError = onError || this.#onError;
     this.#logger = logger || this.#logger;
+    if (_storageProvider) {
+      this.#delegateStorage = _storageProvider;
+      this.disabled = false;
+    }
+  }
+  #shouldDelegate() {
+    return this.#delegateStorage !== null;
   }
   #mapObjects(source, callback, context) {
     if (!this.db) {
@@ -829,6 +842,15 @@ class DB {
     });
   }
   initDatabase() {
+    console.log('[DB] initDatabase CALLED, shouldDelegate:', this.#shouldDelegate(), 'delegateStorage:', !!this.#delegateStorage);
+    if (this.#shouldDelegate()) {
+      console.log('[DB] initDatabase DELEGATING to SQLiteStorage');
+      return this.#delegateStorage.initDatabase().then(result => {
+        console.log('[DB] initDatabase: SQLiteStorage initialized successfully');
+        return result;
+      });
+    }
+    console.log('[DB] initDatabase using IndexedDB');
     return new Promise((resolve, reject) => {
       const req = IDBProvider.open(DB_NAME, DB_VERSION);
       req.onsuccess = event => {
@@ -887,6 +909,9 @@ class DB {
     });
   }
   deleteDatabase() {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.deleteDatabase();
+    }
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -913,9 +938,16 @@ class DB {
     });
   }
   isReady() {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.isReady();
+    }
     return !!this.db;
   }
   updTopic(topic) {
+    console.log('[DB] updTopic CALLED:', topic?.name, 'shouldDelegate:', this.#shouldDelegate());
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updTopic(topic);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -936,6 +968,9 @@ class DB {
     });
   }
   markTopicAsDeleted(name, deleted) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.markTopicAsDeleted(name, deleted);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -960,6 +995,9 @@ class DB {
     });
   }
   remTopic(name) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.remTopic(name);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -979,12 +1017,27 @@ class DB {
     });
   }
   mapTopics(callback, context) {
+    console.log('[DB] mapTopics CALLED, shouldDelegate:', this.#shouldDelegate());
+    if (this.#shouldDelegate()) {
+      console.log('[DB] mapTopics DELEGATING to SQLiteStorage');
+      return this.#delegateStorage.mapTopics(callback, context).then(result => {
+        console.log('[DB] mapTopics: SQLiteStorage returned', result ? result.length : 0, 'topics');
+        return result;
+      });
+    }
+    console.log('[DB] mapTopics using IndexedDB');
     return this.#mapObjects('topic', callback, context);
   }
   deserializeTopic(topic, src) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.deserializeTopic(topic, src);
+    }
     DB.#deserializeTopic(topic, src);
   }
   updUser(uid, pub) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updUser(uid, pub);
+    }
     if (arguments.length < 2 || pub === undefined) {
       return;
     }
@@ -1008,6 +1061,9 @@ class DB {
     });
   }
   remUser(uid) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.remUser(uid);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1025,9 +1081,15 @@ class DB {
     });
   }
   mapUsers(callback, context) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.mapUsers(callback, context);
+    }
     return this.#mapObjects('user', callback, context);
   }
   getUser(uid) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.getUser(uid);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1048,6 +1110,9 @@ class DB {
     });
   }
   updSubscription(topicName, uid, sub) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updSubscription(topicName, uid, sub);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1067,6 +1132,9 @@ class DB {
     });
   }
   mapSubscriptions(topicName, callback, context) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.mapSubscriptions(topicName, callback, context);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve([]) : Promise.reject(new Error("not initialized"));
     }
@@ -1087,6 +1155,9 @@ class DB {
     });
   }
   addMessage(msg) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.addMessage(msg);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1104,6 +1175,9 @@ class DB {
     });
   }
   updMessageStatus(topicName, seq, status) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.updMessageStatus(topicName, seq, status);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1133,6 +1207,9 @@ class DB {
     });
   }
   remMessages(topicName, from, to) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.remMessages(topicName, from, to);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1155,6 +1232,12 @@ class DB {
     });
   }
   readMessages(topicName, query, callback, context) {
+    console.log('[DB] readMessages CALLED:', topicName, 'shouldDelegate:', this.#shouldDelegate(), 'delegateStorage:', !!this.#delegateStorage);
+    if (this.#shouldDelegate()) {
+      console.log('[DB] readMessages DELEGATING to SQLiteStorage');
+      return this.#delegateStorage.readMessages(topicName, query, callback, context);
+    }
+    console.log('[DB] readMessages NOT delegating, using IndexedDB');
     query = query || {};
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve([]) : Promise.reject(new Error("not initialized"));
@@ -1218,6 +1301,9 @@ class DB {
     });
   }
   addDelLog(topicName, delId, ranges) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.addDelLog(topicName, delId, ranges);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve() : Promise.reject(new Error("not initialized"));
     }
@@ -1240,6 +1326,9 @@ class DB {
     });
   }
   readDelLog(topicName, query) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.readDelLog(topicName, query);
+    }
     query = query || {};
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve([]) : Promise.reject(new Error("not initialized"));
@@ -1312,6 +1401,9 @@ class DB {
     });
   }
   maxDelId(topicName) {
+    if (this.#shouldDelegate()) {
+      return this.#delegateStorage.maxDelId(topicName);
+    }
     if (!this.isReady()) {
       return this.disabled ? Promise.resolve(0) : Promise.reject(new Error("not initialized"));
     }
@@ -1388,6 +1480,12 @@ class DB {
   }
   static setDatabaseProvider(idbProvider) {
     IDBProvider = idbProvider;
+  }
+  static setStorageProvider(storage) {
+    _storageProvider = storage;
+  }
+  static getStorageProvider() {
+    return _storageProvider;
   }
 }
 
@@ -5155,10 +5253,13 @@ class Topic {
     return this._queuedSeqId++;
   }
   _loadMessages(db, query) {
+    console.log('[Topic] _loadMessages CALLED:', this.name, 'query:', JSON.stringify(query), 'db:', !!db);
     query = query || {};
     query.limit = query.limit || _config_js__WEBPACK_IMPORTED_MODULE_3__.DEFAULT_MESSAGES_PAGE;
     let count = 0;
+    console.log('[Topic] _loadMessages: calling db.readMessages');
     return db.readMessages(this.name, query).then(msgs => {
+      console.log('[Topic] _loadMessages: db.readMessages returned', msgs ? msgs.length : 0, 'messages');
       msgs.forEach(data => {
         if (data.seq > this._maxSeq) {
           this._maxSeq = data.seq;
@@ -5170,6 +5271,7 @@ class Topic {
         this._maybeUpdateMessageVersionsCache(data);
       });
       count = msgs.length;
+      console.log('[Topic] _loadMessages: processed', count, 'messages, _maxSeq:', this._maxSeq, '_minSeq:', this._minSeq);
     }).then(_ => db.readDelLog(this.name, query)).then(dellog => {
       return dellog.forEach(rec => {
         this._messages.put({
@@ -5449,7 +5551,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   PACKAGE_VERSION: function() { return /* binding */ PACKAGE_VERSION; }
 /* harmony export */ });
-const PACKAGE_VERSION = "0.25.1";
+const PACKAGE_VERSION = "0.25.1-sqlite.6";
 
 /***/ })
 
@@ -5548,6 +5650,7 @@ var __webpack_exports__ = {};
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   AccessMode: function() { return /* reexport safe */ _access_mode_js__WEBPACK_IMPORTED_MODULE_0__["default"]; },
+/* harmony export */   DB: function() { return /* reexport safe */ _db_js__WEBPACK_IMPORTED_MODULE_4__["default"]; },
 /* harmony export */   Drafty: function() { return /* reexport default from dynamic */ _drafty_js__WEBPACK_IMPORTED_MODULE_5___default.a; },
 /* harmony export */   Tinode: function() { return /* binding */ Tinode; }
 /* harmony export */ });
@@ -6298,6 +6401,9 @@ class Tinode {
   static setDatabaseProvider(idbProvider) {
     IndexedDBProvider = idbProvider;
     _db_js__WEBPACK_IMPORTED_MODULE_4__["default"].setDatabaseProvider(IndexedDBProvider);
+  }
+  static setStorageProvider(storage) {
+    _db_js__WEBPACK_IMPORTED_MODULE_4__["default"].setStorageProvider(storage);
   }
   static getLibrary() {
     return _config_js__WEBPACK_IMPORTED_MODULE_1__.LIBRARY;

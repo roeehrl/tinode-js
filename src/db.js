@@ -220,6 +220,14 @@ export default class DB {
    * @returns {Promise} promise resolved/rejected on operation completion.
    */
   updTopic(topic) {
+    // Skip topics that haven't been confirmed by the server yet.
+    // The _new flag is true for topics created locally but not yet subscribed.
+    // Only persist after subscribe succeeds and server assigns the real topic name.
+    if (topic?._new) {
+      console.log('[DB] updTopic DEFERRED - topic not yet confirmed by server:', topic.name);
+      return Promise.resolve();
+    }
+
     console.log('[DB] updTopic CALLED:', topic?.name, 'shouldDelegate:', this.#shouldDelegate());
     // Delegate to custom storage if set
     if (this.#shouldDelegate()) {

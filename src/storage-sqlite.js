@@ -198,6 +198,75 @@ export default class SQLiteStorage {
     return this._ready && this._db !== null;
   }
 
+  /**
+   * Attempt to recover the database connection if it becomes stale.
+   * This handles cases where the native database handle becomes invalid
+   * after app lifecycle events or reconnections.
+   * @returns {Promise<boolean>} True if recovery succeeded.
+   */
+  async _recoverDatabase() {
+    const self = this;
+    try {
+      console.log('[SQLiteStorage] Attempting database recovery...');
+
+      // Close existing connection if any
+      if (self._db) {
+        try {
+          await self._db.closeAsync();
+        } catch (closeErr) {
+          // Ignore close errors - the handle may already be invalid
+          console.log('[SQLiteStorage] Close during recovery failed (expected):', closeErr.message);
+        }
+        self._db = null;
+      }
+
+      // Re-open the database
+      self._ready = false;
+      await self.initDatabase();
+
+      console.log('[SQLiteStorage] Database recovery successful');
+      return true;
+    } catch (err) {
+      console.error('[SQLiteStorage] Database recovery failed:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Wrapper to execute database operations with automatic recovery.
+   * If an operation fails with NullPointerException, attempts recovery and retry.
+   * @param {function} operation - Async function to execute
+   * @param {string} operationName - Name for logging
+   * @returns {Promise<any>} Result of the operation
+   */
+  async _withRecovery(operation, operationName) {
+    const self = this;
+    try {
+      return await operation();
+    } catch (err) {
+      // Check if this is a stale database handle error
+      const isStaleHandle = err.message && (
+        err.message.includes('NullPointerException') ||
+        err.message.includes('prepareAsync') ||
+        err.message.includes('database is not open') ||
+        err.message.includes('SQLiteDatabase')
+      );
+
+      if (isStaleHandle) {
+        console.warn('[SQLiteStorage]', operationName, 'failed with stale handle, attempting recovery...');
+        const recovered = await self._recoverDatabase();
+        if (recovered) {
+          // Retry the operation once
+          console.log('[SQLiteStorage] Retrying', operationName, 'after recovery...');
+          return await operation();
+        }
+      }
+
+      // Re-throw if not recoverable
+      throw err;
+    }
+  }
+
   // ==================== Topics ====================
 
   /**
@@ -207,11 +276,20 @@ export default class SQLiteStorage {
    */
   async updTopic(topic) {
     const self = this;
+
+    // Skip topics that haven't been confirmed by the server yet.
+    // The _new flag is true for topics created locally but not yet subscribed.
+    // Only persist after subscribe succeeds and server assigns the real topic name.
+    if (topic?._new) {
+      console.log('[SQLiteStorage] updTopic DEFERRED - topic not yet confirmed by server:', topic.name);
+      return Promise.resolve();
+    }
+
     if (!self.isReady()) {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       // Get existing topic to merge data
       const existing = await self._db.getFirstAsync(
         'SELECT * FROM topics WHERE name = ?',
@@ -237,10 +315,7 @@ export default class SQLiteStorage {
         data._aux, data._deleted, data.tags, data.acs
       ]);
       console.log('[SQLiteStorage] updTopic SUCCESS:', data.name);
-    } catch (err) {
-      console.error('[SQLiteStorage] updTopic FAILED:', err.message, 'topic:', topic.name);
-      throw err;
-    }
+    }, 'updTopic');
   }
 
   /**
@@ -255,15 +330,12 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       await self._db.runAsync(
         'UPDATE topics SET _deleted = ? WHERE name = ?',
         [deleted ? 1 : 0, name]
       );
-    } catch (err) {
-      self._logger('SQLiteStorage', 'markTopicAsDeleted error:', err);
-      throw err;
-    }
+    }, 'markTopicAsDeleted');
   }
 
   /**
@@ -277,7 +349,7 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       // Delete topic, subscriptions, and messages in a transaction
       await self._db.withTransactionAsync(async function() {
         await self._db.runAsync('DELETE FROM topics WHERE name = ?', [name]);
@@ -285,10 +357,7 @@ export default class SQLiteStorage {
         await self._db.runAsync('DELETE FROM messages WHERE topic = ?', [name]);
         await self._db.runAsync('DELETE FROM dellog WHERE topic = ?', [name]);
       });
-    } catch (err) {
-      self._logger('SQLiteStorage', 'remTopic error:', err);
-      throw err;
-    }
+    }, 'remTopic');
   }
 
   /**
@@ -303,7 +372,7 @@ export default class SQLiteStorage {
       return [];
     }
 
-    try {
+    return self._withRecovery(async () => {
       const rows = await self._db.getAllAsync('SELECT * FROM topics');
       const topics = rows.map(function(row) {
         return self._deserializeTopicRow(row);
@@ -316,10 +385,7 @@ export default class SQLiteStorage {
       }
 
       return topics;
-    } catch (err) {
-      self._logger('SQLiteStorage', 'mapTopics error:', err);
-      throw err;
-    }
+    }, 'mapTopics');
   }
 
   /**
@@ -361,15 +427,12 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       await self._db.runAsync(
         'INSERT OR REPLACE INTO users (uid, public) VALUES (?, ?)',
         [uid, JSON.stringify(pub)]
       );
-    } catch (err) {
-      self._logger('SQLiteStorage', 'updUser error:', err);
-      throw err;
-    }
+    }, 'updUser');
   }
 
   /**
@@ -383,12 +446,9 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       await self._db.runAsync('DELETE FROM users WHERE uid = ?', [uid]);
-    } catch (err) {
-      self._logger('SQLiteStorage', 'remUser error:', err);
-      throw err;
-    }
+    }, 'remUser');
   }
 
   /**
@@ -403,7 +463,7 @@ export default class SQLiteStorage {
       return [];
     }
 
-    try {
+    return self._withRecovery(async () => {
       const rows = await self._db.getAllAsync('SELECT * FROM users');
       const users = rows.map(function(row) {
         return {
@@ -419,10 +479,7 @@ export default class SQLiteStorage {
       }
 
       return users;
-    } catch (err) {
-      self._logger('SQLiteStorage', 'mapUsers error:', err);
-      throw err;
-    }
+    }, 'mapUsers');
   }
 
   /**
@@ -436,7 +493,7 @@ export default class SQLiteStorage {
       return undefined;
     }
 
-    try {
+    return self._withRecovery(async () => {
       const row = await self._db.getFirstAsync(
         'SELECT * FROM users WHERE uid = ?',
         [uid]
@@ -450,10 +507,7 @@ export default class SQLiteStorage {
         uid: row.uid,
         public: self._parseJSON(row.public)
       };
-    } catch (err) {
-      self._logger('SQLiteStorage', 'getUser error:', err);
-      throw err;
-    }
+    }, 'getUser');
   }
 
   // ==================== Subscriptions ====================
@@ -471,7 +525,7 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       // Get existing subscription
       const existing = await self._db.getFirstAsync(
         'SELECT * FROM subscriptions WHERE topic = ? AND uid = ?',
@@ -484,10 +538,7 @@ export default class SQLiteStorage {
         'INSERT OR REPLACE INTO subscriptions (topic, uid, updated, mode, read, recv, clear, lastSeen, userAgent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [data.topic, data.uid, data.updated, data.mode, data.read, data.recv, data.clear, data.lastSeen, data.userAgent]
       );
-    } catch (err) {
-      self._logger('SQLiteStorage', 'updSubscription error:', err);
-      throw err;
-    }
+    }, 'updSubscription');
   }
 
   /**
@@ -503,7 +554,7 @@ export default class SQLiteStorage {
       return [];
     }
 
-    try {
+    return self._withRecovery(async () => {
       const rows = await self._db.getAllAsync(
         'SELECT * FROM subscriptions WHERE topic = ?',
         [topicName]
@@ -520,10 +571,7 @@ export default class SQLiteStorage {
       }
 
       return subs;
-    } catch (err) {
-      self._logger('SQLiteStorage', 'mapSubscriptions error:', err);
-      throw err;
-    }
+    }, 'mapSubscriptions');
   }
 
   // ==================== Messages ====================
@@ -539,40 +587,8 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       const data = self._serializeMessage(null, msg);
-
-      // Debug: log all values with their types
-      console.log('[SQLiteStorage] addMessage PARAMS:', JSON.stringify({
-        topic: {
-          value: data.topic,
-          type: typeof data.topic
-        },
-        seq: {
-          value: data.seq,
-          type: typeof data.seq
-        },
-        ts: {
-          value: data.ts,
-          type: typeof data.ts
-        },
-        _status: {
-          value: data._status,
-          type: typeof data._status
-        },
-        from: {
-          value: data.from,
-          type: typeof data.from
-        },
-        head: {
-          value: data.head ? data.head.substring(0, 50) : null,
-          type: typeof data.head
-        },
-        content: {
-          value: data.content ? data.content.substring(0, 50) : null,
-          type: typeof data.content
-        }
-      }));
 
       // Build params array explicitly, converting undefined to null for SQLite
       const params = [
@@ -585,19 +601,12 @@ export default class SQLiteStorage {
         data.content !== undefined ? data.content : null
       ];
 
-      console.log('[SQLiteStorage] addMessage params array:', params.map((p, i) => `[${i}]=${typeof p}:${p === null ? 'null' : p === undefined ? 'undefined' : 'value'}`).join(', '));
-
       await self._db.runAsync(
         `INSERT OR REPLACE INTO messages (topic, seq, ts, _status, from_uid, head, content) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         params
       );
       console.log('[SQLiteStorage] addMessage SUCCESS:', data.topic, data.seq);
-    } catch (err) {
-      console.error('[SQLiteStorage] addMessage FAILED:', err);
-      console.error('[SQLiteStorage] addMessage FAILED err.message:', err.message);
-      console.error('[SQLiteStorage] addMessage FAILED err.stack:', err.stack);
-      throw err;
-    }
+    }, 'addMessage');
   }
 
   /**
@@ -613,15 +622,12 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       await self._db.runAsync(
         'UPDATE messages SET _status = ? WHERE topic = ? AND seq = ?',
         [status, topicName, seq]
       );
-    } catch (err) {
-      self._logger('SQLiteStorage', 'updMessageStatus error:', err);
-      throw err;
-    }
+    }, 'updMessageStatus');
   }
 
   /**
@@ -637,7 +643,7 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       if (!from && !to) {
         // Delete all messages for topic
         await self._db.runAsync(
@@ -657,10 +663,7 @@ export default class SQLiteStorage {
           [topicName, from]
         );
       }
-    } catch (err) {
-      self._logger('SQLiteStorage', 'remMessages error:', err);
-      throw err;
-    }
+    }, 'remMessages');
   }
 
   /**
@@ -675,40 +678,29 @@ export default class SQLiteStorage {
     const self = this;
     query = query || {};
 
-    console.log('[SQLiteStorage] readMessages CALLED:', {
-      topicName,
-      query: JSON.stringify(query),
-      hasCallback: !!callback
-    });
-
     if (!self.isReady()) {
-      console.log('[SQLiteStorage] readMessages: DB NOT READY');
       return [];
     }
 
-    try {
+    return self._withRecovery(async () => {
       var result = [];
 
       // Handle individual message ranges
       if (Array.isArray(query.ranges)) {
-        console.log('[SQLiteStorage] readMessages: Using RANGES query, ranges:', query.ranges.length);
         for (var i = 0; i < query.ranges.length; i++) {
           var range = query.ranges[i];
           var msgs;
           if (range.hi) {
-            console.log('[SQLiteStorage] readMessages: Range', i, '- low:', range.low, 'hi:', range.hi);
             msgs = await self._db.getAllAsync(
               'SELECT * FROM messages WHERE topic = ? AND seq >= ? AND seq < ? ORDER BY seq DESC',
               [topicName, range.low, range.hi]
             );
           } else {
-            console.log('[SQLiteStorage] readMessages: Range', i, '- single seq:', range.low);
             msgs = await self._db.getAllAsync(
               'SELECT * FROM messages WHERE topic = ? AND seq = ?',
               [topicName, range.low]
             );
           }
-          console.log('[SQLiteStorage] readMessages: Range', i, 'returned', msgs.length, 'rows');
 
           var deserialized = msgs.map(function(row) {
             return self._deserializeMessageRow(row);
@@ -720,7 +712,6 @@ export default class SQLiteStorage {
 
           result = result.concat(deserialized);
         }
-        console.log('[SQLiteStorage] readMessages: RANGES query total result:', result.length);
         return result;
       }
 
@@ -737,31 +728,11 @@ export default class SQLiteStorage {
         params.push(limit);
       }
 
-      console.log('[SQLiteStorage] readMessages: SQL:', sql);
-      console.log('[SQLiteStorage] readMessages: params:', JSON.stringify(params));
-
-      // DEBUG: First check what's actually in the database for this topic
-      var allMsgsForTopic = await self._db.getAllAsync(
-        'SELECT topic, seq, ts FROM messages WHERE topic = ? ORDER BY seq DESC',
-        [topicName]
-      );
-      console.log('[SQLiteStorage] readMessages: DEBUG - ALL messages in DB for topic:', allMsgsForTopic.length,
-        allMsgsForTopic.map(m => m.seq).join(','));
-
       var rows = await self._db.getAllAsync(sql, params);
-      console.log('[SQLiteStorage] readMessages: Raw rows returned:', rows.length);
-      if (rows.length > 0) {
-        console.log('[SQLiteStorage] readMessages: First row seq:', rows[0].seq, 'topic:', rows[0].topic);
-        if (rows.length > 1) {
-          console.log('[SQLiteStorage] readMessages: Last row seq:', rows[rows.length - 1].seq);
-        }
-      }
 
       result = rows.map(function(row) {
         return self._deserializeMessageRow(row);
       });
-
-      console.log('[SQLiteStorage] readMessages: Returning', result.length, 'messages');
 
       if (callback) {
         result.forEach(function(msg) {
@@ -770,11 +741,7 @@ export default class SQLiteStorage {
       }
 
       return result;
-    } catch (err) {
-      console.error('[SQLiteStorage] readMessages ERROR:', err);
-      self._logger('SQLiteStorage', 'readMessages error:', err);
-      throw err;
-    }
+    }, 'readMessages');
   }
 
   // ==================== Delete Log ====================
@@ -792,7 +759,7 @@ export default class SQLiteStorage {
       return Promise.resolve();
     }
 
-    try {
+    return self._withRecovery(async () => {
       // Use withTransactionAsync for proper transaction handling
       await self._db.withTransactionAsync(async function() {
         for (var i = 0; i < ranges.length; i++) {
@@ -803,10 +770,7 @@ export default class SQLiteStorage {
           );
         }
       });
-    } catch (err) {
-      self._logger('SQLiteStorage', 'addDelLog error:', err);
-      throw err;
-    }
+    }, 'addDelLog');
   }
 
   /**
@@ -823,7 +787,7 @@ export default class SQLiteStorage {
       return [];
     }
 
-    try {
+    return self._withRecovery(async () => {
       var result = [];
 
       // Handle individual message ranges
@@ -868,10 +832,7 @@ export default class SQLiteStorage {
       }
 
       return result;
-    } catch (err) {
-      self._logger('SQLiteStorage', 'readDelLog error:', err);
-      throw err;
-    }
+    }, 'readDelLog');
   }
 
   /**
@@ -885,7 +846,7 @@ export default class SQLiteStorage {
       return undefined;
     }
 
-    try {
+    return self._withRecovery(async () => {
       const row = await self._db.getFirstAsync(
         'SELECT * FROM dellog WHERE topic = ? ORDER BY clear DESC LIMIT 1',
         [topicName]
@@ -901,10 +862,7 @@ export default class SQLiteStorage {
         low: row.low,
         hi: row.hi
       };
-    } catch (err) {
-      self._logger('SQLiteStorage', 'maxDelId error:', err);
-      throw err;
-    }
+    }, 'maxDelId');
   }
 
   // ==================== Private Helper Methods ====================

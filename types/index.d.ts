@@ -11,7 +11,7 @@
  * @see https://github.com/tinode/tinode-js
  */
 
-declare module 'tinode-sdk' {
+declare module '@roeehrl/tinode-sdk' {
   // ==========================================================================
   // Configuration Types
   // ==========================================================================
@@ -206,7 +206,8 @@ declare module 'tinode-sdk' {
 
   export interface SetDesc {
     defacs?: DefAcs;
-    public?: Record<string, unknown>;
+    /** Public data. For fnd topic, can be a search query string. */
+    public?: Record<string, unknown> | string;
     trusted?: Record<string, unknown>;
     private?: Record<string, unknown>;
   }

@@ -489,6 +489,20 @@ export default class Connection {
       if (this.#socket && (this.#socket.readyState == this.#socket.OPEN)) {
         this.#socket.send(msg);
       } else {
+        // Socket is not connected - trigger disconnect callback if not already done
+        // This handles the case where the server dies but onclose hasn't fired yet
+        if (this.onDisconnect) {
+          // Use setTimeout to avoid blocking the throw
+          setTimeout(() => {
+            if (this.onDisconnect) {
+              this.onDisconnect(new CommError(NETWORK_ERROR_TEXT, NETWORK_ERROR), NETWORK_ERROR);
+            }
+          }, 0);
+        }
+        // Clean up the socket reference if it exists but isn't connected
+        if (this.#socket) {
+          this.#socket = null;
+        }
         throw new Error("Websocket is not connected");
       }
     };
