@@ -770,6 +770,16 @@ class Connection {
       if (this.#socket && this.#socket.readyState == this.#socket.OPEN) {
         this.#socket.send(msg);
       } else {
+        if (this.onDisconnect) {
+          setTimeout(() => {
+            if (this.onDisconnect) {
+              this.onDisconnect(new _comm_error_js__WEBPACK_IMPORTED_MODULE_0__["default"](NETWORK_ERROR_TEXT, NETWORK_ERROR), NETWORK_ERROR);
+            }
+          }, 0);
+        }
+        if (this.#socket) {
+          this.#socket = null;
+        }
         throw new Error("Websocket is not connected");
       }
     };
@@ -944,6 +954,10 @@ class DB {
     return !!this.db;
   }
   updTopic(topic) {
+    if (topic?._new) {
+      console.log('[DB] updTopic DEFERRED - topic not yet confirmed by server:', topic.name);
+      return Promise.resolve();
+    }
     console.log('[DB] updTopic CALLED:', topic?.name, 'shouldDelegate:', this.#shouldDelegate());
     if (this.#shouldDelegate()) {
       return this.#delegateStorage.updTopic(topic);
@@ -5551,7 +5565,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   PACKAGE_VERSION: function() { return /* binding */ PACKAGE_VERSION; }
 /* harmony export */ });
-const PACKAGE_VERSION = "0.25.1-sqlite.6";
+const PACKAGE_VERSION = "0.25.1-sqlite.8";
 
 /***/ })
 

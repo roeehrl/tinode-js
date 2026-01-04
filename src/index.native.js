@@ -4,7 +4,9 @@
  * This is the entry point for React Native (iOS/Android) environments.
  * Metro bundler automatically picks this file for native platforms.
  *
- * Exports SQLiteStorage for persistent storage using expo-sqlite.
+ * Exports:
+ * - SQLiteStorage for persistent storage using expo-sqlite
+ * - LargeFileHelperNative for file uploads using file URIs
  *
  * @module tinode-sdk
  * @copyright 2015-2025 Tinode LLC, Activon
@@ -33,3 +35,9 @@ export {
   default as SQLiteStorage
 }
 from './storage-sqlite.js';
+
+// Export LargeFileHelperNative for React Native file uploads
+export {
+  default as LargeFileHelperNative
+}
+from './large-file.native.js';

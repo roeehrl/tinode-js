@@ -265,6 +265,8 @@ declare module '@roeehrl/tinode-sdk' {
     duration: number;
     filename?: string;
     size?: number;
+    /** Promise that resolves to the upload URL (for out-of-band uploads) */
+    urlPromise?: Promise<string>;
   }
 
   export interface AttachmentDesc {
@@ -656,6 +658,91 @@ declare module '@roeehrl/tinode-sdk' {
       /** Error callback receives error message string or Error object */
       onError?: (error: Error | string) => void,
     ): Promise<void>;
+
+    cancel(): void;
+  }
+
+  // ==========================================================================
+  // LargeFileHelperNative (React Native)
+  // ==========================================================================
+
+  /**
+   * React Native file upload helper.
+   * Uses file URIs instead of Blob objects for compatibility.
+   */
+  export class LargeFileHelperNative {
+    constructor(tinode: Tinode, version?: string);
+
+    /**
+     * Upload a file from a URI (React Native specific).
+     * @param uri File URI (e.g., 'file:///path/to/audio.m4a')
+     * @param filename Filename for the upload
+     * @param mimetype MIME type of the file
+     * @param size File size in bytes (optional, for progress calculation)
+     * @param avatarFor Topic name if the upload represents an avatar
+     * @param onProgress Progress callback (0..1)
+     * @param onSuccess Success callback
+     * @param onFailure Failure callback
+     * @returns Promise resolved with the upload URL
+     */
+    uploadUri(
+      uri: string,
+      filename: string,
+      mimetype: string,
+      size?: number,
+      avatarFor?: string,
+      onProgress?: (progress: number) => void,
+      onSuccess?: (ctrl: ControlMessage) => void,
+      onFailure?: (ctrl: ControlMessage | null) => void,
+    ): Promise<string>;
+
+    /**
+     * Upload a file from a URI to a specific base URL.
+     */
+    uploadUriWithBaseUrl(
+      baseUrl: string,
+      uri: string,
+      filename: string,
+      mimetype: string,
+      size?: number,
+      avatarFor?: string,
+      onProgress?: (progress: number) => void,
+      onSuccess?: (ctrl: ControlMessage) => void,
+      onFailure?: (ctrl: ControlMessage | null) => void,
+    ): Promise<string>;
+
+    /**
+     * Upload (compatibility method - prefer uploadUri in React Native).
+     * Accepts objects with uri property for RN file objects.
+     */
+    upload(
+      data: { uri: string; name?: string; type?: string; size?: number } | File | Blob,
+      avatarFor?: string,
+      onProgress?: (progress: number) => void,
+      onSuccess?: (ctrl: ControlMessage) => void,
+      onFailure?: (ctrl: ControlMessage | null) => void,
+    ): Promise<string>;
+
+    /**
+     * Get download configuration for use with expo-file-system.
+     * @param relativeUrl Relative URL to the file
+     * @returns Object with url and headers for download
+     */
+    getDownloadConfig(relativeUrl: string): {
+      url: string;
+      headers: Record<string, string>;
+    };
+
+    /**
+     * Download (placeholder - use expo-file-system instead).
+     */
+    download(
+      relativeUrl: string,
+      filename?: string,
+      mimetype?: string,
+      onProgress?: (loaded: number) => void,
+      onError?: (error: Error | string) => void,
+    ): Promise<string>;
 
     cancel(): void;
   }
